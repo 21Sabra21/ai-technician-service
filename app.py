@@ -12,6 +12,7 @@ from models.technician_recommender import TechnicianRecommender
 from schemas.request import AITechnicianAssignmentRequest
 from schemas.response import AITechnicianAssignmentResponse, ErrorResponse
 from utils.logger import setup_logger
+from analyze_problem import router as analyze_router  # ← السطر الجديد
 
 logger = setup_logger()
 
@@ -58,6 +59,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(analyze_router)  # ← السطر الجديد
+
 
 async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)):
     if credentials.credentials != settings.API_KEY:
@@ -100,14 +103,13 @@ async def assign_technician(request: AITechnicianAssignmentRequest):
     
     try:
         logger.info(f"📨 Received request for booking {request.booking_id}")
-        
 
         booking_data = {
             'booking_id': request.booking_id,
             'services': [s.model_dump(by_alias=True) for s in request.services],
             'scheduled_date': request.scheduled_date.isoformat(),
             'priority': request.priority
-}
+        }
         
         result = recommender.recommend(booking_data)
         
