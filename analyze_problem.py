@@ -87,89 +87,50 @@ _RULES = [
     # ── cooling ─────────────────────────────────────────────
     (['تسخن','اداء'],  'cooling'), (['صوت','يسخن'],   'cooling'),
     (['صوت','تسخن'],   'cooling'), (['تسخن','تعب'],    'cooling'),
-    'brakes',  (['فرامل','هز'],     'brakes'),
+    (['فرامل','هز'],     'brakes'),
     (['فرامل','رعش'],    'brakes'),  (['فرمل','رج'],      'brakes'),
     (['فرمل','هز'],      'brakes'),  (['فرمل','رعش'],     'brakes'),
     (['فرمله','رج'],     'brakes'),  (['فرمله','هز'],     'brakes'),
     (['احتكاك','فرامل'], 'brakes'),  (['احتكاك','ببطء'],  'brakes'),
-
-    # ── صفارة/صفير ────────────────────────────────────
     (['صفار'],           'brakes'),  (['صفير'],           'brakes'),
-
-    # ── رجة + وقوف/فرملة فجأة ─────────────────────────
     (['رجه','تقف'],      'brakes'),  (['رجه','فجا'],      'brakes'),
     (['رجة','تقف'],      'brakes'),  (['رجه','وقفت'],     'brakes'),
     (['رجه','فرمل'],     'brakes'),
-
-    # ── بتطفى/بتبطل + اهدي/ارفع ───────────────────────
     (['طف','هدي'],       'engine'),  (['طف','ارفع'],      'engine'),
     (['طف','اهدى'],      'engine'),  (['بطل','هدي'],      'engine'),
     (['بطل','ارفع'],     'engine'),
-
-    # ── سحب ضعيف + بنزين/غاز ──────────────────────────
     (['سحب','بنزين'],    'engine'),  (['سحب','غاز'],      'engine'),
-
-    # ── صوت/بيعلى + مطلع ──────────────────────────────
     (['صوت','مطلع'],     'engine'),  (['بيعلى','مطلع'],   'engine'),
     (['عيط','مطلع'],     'engine'),
-
-    # ── تأخر في السرعة ────────────────────────────────
     (['تاخر','سرعه'],    'engine'),  (['تاخر','بنزين'],   'engine'),
     (['تاخير','بنزين'],  'engine'),
-
-    # ── فصل/تقطع مؤقت ─────────────────────────────────
     (['فصل','لحظه'],     'engine'),  (['فصل','ترجع'],     'engine'),
     (['تقطع','ماشي'],    'engine'),  (['تقطع','ماشيه'],   'engine'),
-
-    # ── صوت غريب + سرعة بطيئة ─────────────────────────
     (['صوت','غريب','قليله'],  'engine'),
     (['صوت','غريب','ببطء'],   'engine'),
     (['صوت','غريب','بطيء'],   'engine'),
-
-    # ── بتمشي بتقل ────────────────────────────────────
     (['بتمشي','بتقل'],   'engine'),  (['ماشي','بتقل'],    'engine'),
     (['ماشيه','بتقل'],   'engine'),
-
-    # ── تقيلة + مسافة ─────────────────────────────────
     (['تقيله','مسافه'],  'engine'),  (['تقيله','مسافة'],  'engine'),
     (['تقيلة','مسافه'],  'engine'),  (['تقيلة','مسافة'],  'engine'),
-
-    # ── صوت بقى أعلى/مختلف + كويس/ماشية ──────────────
     (['صوت','بقى','اعلى'],   'engine'),
     (['صوت','مختلف','كويس'], 'engine'),
     (['صوت','اعلى','كويس'],  'engine'),
-
-    # ── سلاسة أقل ─────────────────────────────────────
     (['سلاسه','اقل'],    'engine'),  (['سلاسة','أقل'],    'engine'),
-
-    # ── مش ناعمة في السواقة ───────────────────────────
     (['ناعمه','سواقه'],  'engine'),  (['ناعمة','سواقة'],  'engine'),
-
-    # ── ريحة → exhaust ────────────────────────────────
     (['ريح','غريب'],     'exhaust'), (['ريح','بنزين'],    'exhaust'),
     (['ريح','شياط'],     'exhaust'), (['ريح','حريق'],     'exhaust'),
     (['ريح','محروق'],    'exhaust'), (['ريح','عادم'],     'exhaust'),
-
-    # ── زن/طنين → tires ───────────────────────────────
     (['طنين'],           'tires'),   (['صوت','زن'],       'tires'),
-
-    # ── ساعات بتدور → starting ────────────────────────
     (['ساعات','بتدور'],  'starting'), (['ساعات','بتشتغل'], 'starting'),
-
-    # ── أرقام سرعة + هز/رج → alignment ───────────────
     (['100','هز'], 'alignment_balancing'), (['100','رج'], 'alignment_balancing'),
     (['80','هز'],  'alignment_balancing'), (['80','رج'],  'alignment_balancing'),
     (['90','هز'],  'alignment_balancing'), (['120','هز'], 'alignment_balancing'),
-
-    # ── مش ثابتة على طريق سريع → alignment ───────────
     (['ثابته','طريق','سريع'],  'alignment_balancing'),
     (['ثابت','طريق','سريع'],   'alignment_balancing'),
     (['مستقره','طريق','سريع'], 'alignment_balancing'),
-
-    # ── تسخن + أداء/أبطأ/تعب → cooling ───────────────
     (['تسخن','اداء'],    'cooling'), (['تسخن','بطا'],     'cooling'),
     (['تسخن','تعب'],     'cooling'), (['تسخن','تضعف'],    'cooling'),
-
 ]
 
 def _normalize(text: str) -> str:
@@ -183,10 +144,13 @@ def _preprocess(text: str) -> str:
     return re.sub(r'\s+', ' ', text)
 
 def _apply_rules(clean: str):
-    for kws, cat in _RULES:
-        if all(k in clean for k in kws):
-            return cat
-    return None
+    matched = []
+    for item in _RULES:
+        if isinstance(item, tuple):
+            kws, cat = item
+            if all(k in clean for k in kws) and cat not in matched:
+                matched.append(cat)
+    return matched
 
 def _make(svc_map, cat, conf):
     s = svc_map[cat]
@@ -198,11 +162,18 @@ def _analyze(text: str) -> AnalyzeProblemResponse:
     svc_map  = data["services"]
     clean    = _preprocess(text)
 
-    rule_cat = _apply_rules(clean)
-    if rule_cat:
+    rule_cats = _apply_rules(clean)
+
+    if len(rule_cats) > 1:
+        return AnalyzeProblemResponse(
+            status="possible",
+            recommendedServices=[_make(svc_map, cat, 0.90) for cat in rule_cats[:2]],
+            message="في احتمالين للمشكلة، التقني هيحدد بعد الفحص"
+        )
+    elif len(rule_cats) == 1:
         return AnalyzeProblemResponse(
             status="success",
-            recommendedServices=[_make(svc_map, rule_cat, 0.90)],
+            recommendedServices=[_make(svc_map, rule_cats[0], 0.90)],
         )
 
     proba    = pipeline.predict_proba([clean])[0]
