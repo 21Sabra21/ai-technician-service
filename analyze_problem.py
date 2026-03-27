@@ -10,7 +10,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from typing import List
 
-_MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "nlp", "problem_analyzer.pkl")
+_MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "nlp", "problem_analyzer_v6.pkl")
 _model_data = None
 
 def _get_model():
