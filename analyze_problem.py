@@ -3,6 +3,8 @@ POST /api/analyze-problem
 success  → top-1 ≥ 60%
 possible → top-1 بين 40-59%
 unknown  → top-1 < 40%
+
+يرجع حتى MAX_SERVICES خدمات (model top-N + rules)
 """
 
 import pickle, re, numpy as np, os
@@ -35,11 +37,13 @@ class AnalyzeProblemResponse(BaseModel):
     message: str | None = None
 
 
-_CONFIDENT  = 0.60
-_POSSIBLE   = 0.40
-_TOP2_MIN   = 0.30
-_CLOSE_SURE = 0.35
-_CLOSE_POSS = 0.20
+# ── Thresholds ────────────────────────────────────────────
+_CONFIDENT  = 0.60   # top-1 → success
+_POSSIBLE   = 0.40   # top-1 → possible
+_TOP_N_MIN  = 0.25   # الحد الأدنى للـ confidence علشان نضم أي service من الـ model
+_CLOSE_SURE = 0.35   # فرق مسموح بيه بين top-1 و top-2 لما model واثق
+_CLOSE_POSS = 0.20   # فرق مسموح بيه لما model مش واثق جداً
+_MAX_SERVICES = 3    # ← الحد الأقصى للخدمات المرجعة
 
 _RULES = [
     # brakes
@@ -117,6 +121,17 @@ def _make(svc_map, cat, conf):
     s = svc_map[cat]
     return RecommendedService(serviceId=s["id"], serviceName=s["name"], confidence=round(conf, 3))
 
+def _merge(base: list, extras: list, max_n: int) -> list:
+    """يضيف extras على base بدون تكرار وبحد أقصى max_n"""
+    seen_ids = {s.serviceId for s in base}
+    for svc in extras:
+        if len(base) >= max_n:
+            break
+        if svc.serviceId not in seen_ids:
+            base.append(svc)
+            seen_ids.add(svc.serviceId)
+    return base
+
 
 def _analyze(text: str) -> AnalyzeProblemResponse:
     data     = _get_model()
@@ -124,57 +139,70 @@ def _analyze(text: str) -> AnalyzeProblemResponse:
     svc_map  = data["services"]
     clean    = _preprocess(text)
 
-    # Model أولاً دايماً
-    proba    = pipeline.predict_proba([clean])[0]
-    classes  = pipeline.classes_
-    idxs     = np.argsort(proba)[::-1]
+    # ── Model predictions (مرتبة تنازلياً) ──────────────
+    proba   = pipeline.predict_proba([clean])[0]
+    classes = pipeline.classes_
+    idxs    = np.argsort(proba)[::-1]
+
     t1c, t1v = classes[idxs[0]], float(proba[idxs[0]])
     t2c, t2v = classes[idxs[1]], float(proba[idxs[1]])
-    gap      = t1v - t2v
+    t3c, t3v = classes[idxs[2]], float(proba[idxs[2]])
+    gap12 = t1v - t2v
+    gap23 = t2v - t3v
 
-    # Rules: خدمات إضافية مختلفة عن الـ model
+    # ── Rules: خدمات إضافية ──────────────────────────────
     rule_cats  = _apply_rules(clean)
+    # extra_svcs = كل الـ rules الـ بتختلف عن top-1 (بـ confidence ثابت 0.90)
     extra_svcs = [
         _make(svc_map, cat, 0.90)
         for cat in rule_cats
         if cat != t1c
     ]
 
-    # Model مش واثق
+    # ── Model مش واثق (unknown zone) ─────────────────────
     if t1v < _POSSIBLE or t1c == "unknown":
         if not extra_svcs:
             return AnalyzeProblemResponse(
                 status="unknown",
                 message="مش قدرنا نحدد المشكلة، ممكن توضح أكتر؟",
             )
-        return AnalyzeProblemResponse(
-            status="possible",
-            recommendedServices=extra_svcs[:2],
-            message="في احتمالين للمشكلة، التقني هيحدد بعد الفحص" if len(extra_svcs) > 1 else "مش متأكدين 100%، بس ده الأرجح",
+        result = extra_svcs[:_MAX_SERVICES]
+        msg = (
+            "في أكتر من احتمال للمشكلة، التقني هيحدد بعد الفحص"
+            if len(result) > 1
+            else "مش متأكدين 100%، بس ده الأرجح"
         )
+        return AnalyzeProblemResponse(status="possible", recommendedServices=result, message=msg)
 
-    # Model واثق — نبني svcs من الـ model
+    # ── Model واثق — نبني svcs من الـ model ──────────────
+    model_svcs = [_make(svc_map, t1c, t1v)]
+
     if t1v >= _CONFIDENT:
-        model_svcs = [_make(svc_map, t1c, t1v)]
-        if gap <= _CLOSE_SURE and t2v >= _TOP2_MIN and t2c != "unknown":
+        # top-2
+        if gap12 <= _CLOSE_SURE and t2v >= _TOP_N_MIN and t2c != "unknown":
             model_svcs.append(_make(svc_map, t2c, t2v))
+            # top-3 (بس لو top-2 كمان مقرب من top-1)
+            if gap23 <= _CLOSE_SURE and t3v >= _TOP_N_MIN and t3c != "unknown":
+                model_svcs.append(_make(svc_map, t3c, t3v))
     else:
-        model_svcs = [_make(svc_map, t1c, t1v)]
-        if gap <= _CLOSE_POSS and t2v >= _TOP2_MIN and t2c != "unknown":
+        # possible zone
+        if gap12 <= _CLOSE_POSS and t2v >= _TOP_N_MIN and t2c != "unknown":
             model_svcs.append(_make(svc_map, t2c, t2v))
+            if gap23 <= _CLOSE_POSS and t3v >= _TOP_N_MIN and t3c != "unknown":
+                model_svcs.append(_make(svc_map, t3c, t3v))
 
-    # ندمج extra_svcs بدون تكرار والعدد أقصاه 2
-    seen_ids = {s.serviceId for s in model_svcs}
-    for svc in extra_svcs:
-        if svc.serviceId not in seen_ids and len(model_svcs) < 2:
-            model_svcs.append(svc)
-            seen_ids.add(svc.serviceId)
+    # ── ندمج extra_svcs (rules) لو في مساحة ─────────────
+    model_svcs = _merge(model_svcs, extra_svcs, _MAX_SERVICES)
 
+    # ── Response ──────────────────────────────────────────
     if t1v >= _CONFIDENT:
         return AnalyzeProblemResponse(status="success", recommendedServices=model_svcs)
 
-    msg = "في احتمالين للمشكلة، التقني هيحدد بعد الفحص" if len(model_svcs) > 1 \
-          else "مش متأكدين 100%، بس ده الأرجح"
+    msg = (
+        "في أكتر من احتمال للمشكلة، التقني هيحدد بعد الفحص"
+        if len(model_svcs) > 1
+        else "مش متأكدين 100%، بس ده الأرجح"
+    )
     return AnalyzeProblemResponse(status="possible", recommendedServices=model_svcs, message=msg)
 
 
