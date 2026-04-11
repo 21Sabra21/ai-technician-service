@@ -7,7 +7,7 @@ python-json-logger==4.0.0
 starlette==0.52.1
 httpx==0.28.1
 xgboost==2.0.3
-scikit-learn==1.4.0
+scikit-learn==1.8.0
 numpy==1.26.4
 pandas==2.2.0
 imbalanced-learn==0.12.0
