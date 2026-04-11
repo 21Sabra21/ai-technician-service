@@ -20,6 +20,7 @@ def _get_model():
             _model_data = pickle.load(f)
     return _model_data
 
+
 class AnalyzeProblemRequest(BaseModel):
     problemDescription: str = Field(..., min_length=1, max_length=500)
 
@@ -33,11 +34,12 @@ class AnalyzeProblemResponse(BaseModel):
     recommendedServices: List[RecommendedService] = []
     message: str | None = None
 
-_CONFIDENT   = 0.60
-_POSSIBLE    = 0.40
-_TOP2_MIN    = 0.30
-_CLOSE_SURE  = 0.35
-_CLOSE_POSS  = 0.20
+
+_CONFIDENT  = 0.60
+_POSSIBLE   = 0.40
+_TOP2_MIN   = 0.30
+_CLOSE_SURE = 0.35
+_CLOSE_POSS = 0.20
 
 _RULES = [
     # brakes
@@ -111,10 +113,10 @@ def _apply_rules(clean: str) -> list:
             matched.append(cat)
     return matched
 
-
 def _make(svc_map, cat, conf):
     s = svc_map[cat]
     return RecommendedService(serviceId=s["id"], serviceName=s["name"], confidence=round(conf, 3))
+
 
 def _analyze(text: str) -> AnalyzeProblemResponse:
     data     = _get_model()
@@ -122,20 +124,7 @@ def _analyze(text: str) -> AnalyzeProblemResponse:
     svc_map  = data["services"]
     clean    = _preprocess(text)
 
-    rule_cats = _apply_rules(clean)
-
-    if len(rule_cats) > 1:
-        return AnalyzeProblemResponse(
-            status="possible",
-            recommendedServices=[_make(svc_map, cat, 0.90) for cat in rule_cats[:2]],
-            message="في احتمالين للمشكلة، التقني هيحدد بعد الفحص"
-        )
-    elif len(rule_cats) == 1:
-        return AnalyzeProblemResponse(
-            status="success",
-            recommendedServices=[_make(svc_map, rule_cats[0], 0.90)],
-        )
-
+    # Model أولاً دايماً
     proba    = pipeline.predict_proba([clean])[0]
     classes  = pipeline.classes_
     idxs     = np.argsort(proba)[::-1]
@@ -143,24 +132,50 @@ def _analyze(text: str) -> AnalyzeProblemResponse:
     t2c, t2v = classes[idxs[1]], float(proba[idxs[1]])
     gap      = t1v - t2v
 
+    # Rules: خدمات إضافية مختلفة عن الـ model
+    rule_cats  = _apply_rules(clean)
+    extra_svcs = [
+        _make(svc_map, cat, 0.90)
+        for cat in rule_cats
+        if cat != t1c
+    ]
+
+    # Model مش واثق
     if t1v < _POSSIBLE or t1c == "unknown":
+        if not extra_svcs:
+            return AnalyzeProblemResponse(
+                status="unknown",
+                message="مش قدرنا نحدد المشكلة، ممكن توضح أكتر؟",
+            )
         return AnalyzeProblemResponse(
-            status="unknown",
-            message="مش قدرنا نحدد المشكلة، ممكن توضح أكتر؟",
+            status="possible",
+            recommendedServices=extra_svcs[:2],
+            message="في احتمالين للمشكلة، التقني هيحدد بعد الفحص" if len(extra_svcs) > 1 else "مش متأكدين 100%، بس ده الأرجح",
         )
 
+    # Model واثق — نبني svcs من الـ model
     if t1v >= _CONFIDENT:
-        svcs = [_make(svc_map, t1c, t1v)]
+        model_svcs = [_make(svc_map, t1c, t1v)]
         if gap <= _CLOSE_SURE and t2v >= _TOP2_MIN and t2c != "unknown":
-            svcs.append(_make(svc_map, t2c, t2v))
-        return AnalyzeProblemResponse(status="success", recommendedServices=svcs)
+            model_svcs.append(_make(svc_map, t2c, t2v))
+    else:
+        model_svcs = [_make(svc_map, t1c, t1v)]
+        if gap <= _CLOSE_POSS and t2v >= _TOP2_MIN and t2c != "unknown":
+            model_svcs.append(_make(svc_map, t2c, t2v))
 
-    svcs = [_make(svc_map, t1c, t1v)]
-    if gap <= _CLOSE_POSS and t2v >= _TOP2_MIN and t2c != "unknown":
-        svcs.append(_make(svc_map, t2c, t2v))
-    msg = "في احتمالين للمشكلة، التقني هيحدد بعد الفحص" if len(svcs) > 1 \
+    # ندمج extra_svcs بدون تكرار والعدد أقصاه 2
+    seen_ids = {s.serviceId for s in model_svcs}
+    for svc in extra_svcs:
+        if svc.serviceId not in seen_ids and len(model_svcs) < 2:
+            model_svcs.append(svc)
+            seen_ids.add(svc.serviceId)
+
+    if t1v >= _CONFIDENT:
+        return AnalyzeProblemResponse(status="success", recommendedServices=model_svcs)
+
+    msg = "في احتمالين للمشكلة، التقني هيحدد بعد الفحص" if len(model_svcs) > 1 \
           else "مش متأكدين 100%، بس ده الأرجح"
-    return AnalyzeProblemResponse(status="possible", recommendedServices=svcs, message=msg)
+    return AnalyzeProblemResponse(status="possible", recommendedServices=model_svcs, message=msg)
 
 
 router = APIRouter()
