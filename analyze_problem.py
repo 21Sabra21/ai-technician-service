@@ -32,8 +32,17 @@ def _get_model():
 
 
 # ── Schemas ────────────────────────────────────────────────
+class VehicleContext(BaseModel):
+    brand:    str | None = None
+    model:    str | None = None
+    year:     int | None = None
+    mileage:  int | None = None
+
+
 class AnalyzeProblemRequest(BaseModel):
     problemDescription: str = Field(..., min_length=1, max_length=500)
+    vehicleContext: VehicleContext | None = None   # optional — ignored by _analyze for now
+
 
 class RecommendedService(BaseModel):
     serviceId:   int
@@ -162,7 +171,7 @@ def _analyze(text: str) -> AnalyzeProblemResponse:
     extra_svcs = [
         _make(svc_map, cat, 0.90)
         for cat in rule_cats
-        if cat != t1c
+        if cat != t1c and cat != "unknown"   # ← never expose serviceId 17
     ]
 
     # Unknown zone
